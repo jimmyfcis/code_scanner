@@ -92,9 +92,11 @@ class _ScanScreenState extends State<ScanScreen>
       barrierDismissible: false,
       builder: (_) => StatefulBuilder(builder: (context, setDialogState) {
         return AlertDialog(
+          backgroundColor: Colors.blueGrey[50],
           title: const Text('Employee Scanned'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(employeeId,
                   textAlign: TextAlign.center,
@@ -116,7 +118,7 @@ class _ScanScreenState extends State<ScanScreen>
                     await attendEmployee();
                     setDialogState(() {});
                   },
-                  child: const Text('Attend Employee'),
+                  child: const Text('Attend Employee',style: TextStyle(color: Colors.white),),
                 ),
               if (status == AttendStatus.success || status == AttendStatus.error)
                 ElevatedButton(
@@ -124,7 +126,7 @@ class _ScanScreenState extends State<ScanScreen>
                     Navigator.pop(context);
                     reset();
                   },
-                  child: const Text('Scan Next'),
+                  child: const Text('Scan Next',style: TextStyle(color: Colors.white),),
                 ),
             ],
           ),
@@ -136,7 +138,9 @@ class _ScanScreenState extends State<ScanScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.blueGrey[50],
       appBar: AppBar(
+        backgroundColor: Colors.blueGrey[50],
         title: const Text('Scan QR'),
         actions: [
           IconButton(
