@@ -7,16 +7,28 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Home')),
+      backgroundColor: Colors.blueGrey[50],
       body: Center(
-        child: ElevatedButton(
-          child: const Text('Scan'),
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ScanScreen()),
-            );
-          },
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: SizedBox(
+            width: double.infinity,
+            height: 70,
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const ScanScreen()),
+                );
+              },
+              style: ElevatedButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Text('Scan',style: TextStyle(fontSize: 18, color: Colors.white)),
+            ),
+          ),
         ),
       ),
     );
