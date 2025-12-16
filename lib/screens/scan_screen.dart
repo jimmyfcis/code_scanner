@@ -92,7 +92,7 @@ class _ScanScreenState extends State<ScanScreen>
       barrierDismissible: false,
       builder: (_) => StatefulBuilder(builder: (context, setDialogState) {
         return AlertDialog(
-          title: const Text('Employee Attendance'),
+          title: const Text('Employee Scanned'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
