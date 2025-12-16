@@ -1,6 +1,6 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:http/http.dart' as http;
 
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
@@ -9,71 +9,127 @@ class ScanScreen extends StatefulWidget {
   State<ScanScreen> createState() => _ScanScreenState();
 }
 
-class _ScanScreenState extends State<ScanScreen> {
-  final MobileScannerController _scannerController = MobileScannerController();
+enum AttendStatus { idle, loading, success, error }
 
-  String? scannedData;
-  bool isSubmitting = false;
+class _ScanScreenState extends State<ScanScreen>
+    with WidgetsBindingObserver {
+  late final MobileScannerController _scannerController;
+  bool cameraStarted = false; // Track camera manually
 
-  void reset() {
-    setState(() {
-      scannedData = null;
-      isSubmitting = false;
-    });
+  String? scannedEmployeeId;
+  AttendStatus status = AttendStatus.idle;
 
-    _scannerController.start();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _scannerController = MobileScannerController(autoStart: false);
+    _startCamera();
   }
 
-  Future<void> attendEmployee(String employeeId) async {
-    setState(() => isSubmitting = true);
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _scannerController.dispose();
+    super.dispose();
+  }
 
-    try {
-      final uri = Uri.parse(
-        'https://your-api.com/rsvp/attend?employeeId=$employeeId',
-      );
-
-      final response = await http.post(uri);
-
-      if (response.statusCode == 200) {
-        if (!mounted) return;
-        Navigator.pop(context); // close dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Attendance successful')),
-        );
-
-      } else {
-        throw Exception('Failed with status ${response.statusCode}');
-      }
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => isSubmitting = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      if (cameraStarted) _scannerController.stop();
+    } else if (state == AppLifecycleState.resumed && scannedEmployeeId == null) {
+      _startCamera();
     }
-    reset();
+  }
+
+  Future<void> _startCamera() async {
+    if (cameraStarted) return;
+    try {
+      await _scannerController.start();
+      cameraStarted = true;
+    } catch (_) {
+      // Ignore errors if camera is busy
+    }
+  }
+
+  Future<void> _stopCamera() async {
+    if (!cameraStarted) return;
+    try {
+      await _scannerController.stop();
+      cameraStarted = false;
+    } catch (_) {}
+  }
+
+  void reset() async {
+    setState(() {
+      scannedEmployeeId = null;
+      status = AttendStatus.idle;
+    });
+
+    await Future.delayed(const Duration(milliseconds: 300));
+    _startCamera();
+  }
+
+  // ---------------- SIMULATED ATTEND API ----------------
+  Future<void> attendEmployee() async {
+    setState(() => status = AttendStatus.loading);
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    final bool isSuccess = Random().nextBool();
+
+    if (!mounted) return;
+    setState(() {
+      status = isSuccess ? AttendStatus.success : AttendStatus.error;
+    });
   }
 
   void showResultDialog(String employeeId) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('Scanned Employee'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(employeeId, textAlign: TextAlign.center),
-            const SizedBox(height: 20),
-            isSubmitting
-                ? const CircularProgressIndicator()
-                : ElevatedButton(
-              onPressed: () => attendEmployee(employeeId),
-              child: const Text('Attend Employee'),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => StatefulBuilder(builder: (context, setDialogState) {
+        return AlertDialog(
+          title: const Text('Employee Attendance'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(employeeId,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 24),
+              if (status == AttendStatus.loading)
+                const CircularProgressIndicator(),
+              if (status == AttendStatus.success)
+                const Icon(Icons.check_circle, color: Colors.green, size: 64),
+              if (status == AttendStatus.error)
+                const Icon(Icons.error, color: Colors.red, size: 64),
+              const SizedBox(height: 16),
+              if (status == AttendStatus.idle)
+                ElevatedButton(
+                  onPressed: () async {
+                    setDialogState(() {
+                      status = AttendStatus.loading;
+                    });
+                    await attendEmployee();
+                    setDialogState(() {});
+                  },
+                  child: const Text('Attend Employee'),
+                ),
+              if (status == AttendStatus.success || status == AttendStatus.error)
+                ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    reset();
+                  },
+                  child: const Text('Scan Next'),
+                ),
+            ],
+          ),
+        );
+      }),
     );
   }
 
@@ -86,38 +142,41 @@ class _ScanScreenState extends State<ScanScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: reset,
-          )
+          ),
         ],
       ),
       body: Stack(
         children: [
-          if (scannedData == null)
+          if (scannedEmployeeId == null)
             MobileScanner(
               controller: _scannerController,
-              onDetect: (BarcodeCapture capture) {
+              onDetect: (capture) async {
                 final barcodes = capture.barcodes;
                 if (barcodes.isEmpty) return;
 
-                final value = barcodes.first.rawValue;
-                if (value == null) return;
+                final rawValue = barcodes.first.rawValue;
+                if (rawValue == null) return;
 
-                _scannerController.stop();
+                final employeeId = extractEmployeeId(rawValue);
+                if (employeeId.isEmpty) return;
 
-                setState(() => scannedData = value);
+                await _stopCamera();
+                setState(() => scannedEmployeeId = employeeId);
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                 String employeeId =extractEmployeeId(value);
                   showResultDialog(employeeId);
                 });
               },
             ),
-
-          if (scannedData == null)
+          if (scannedEmployeeId == null)
             const Align(
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Scan a QR code'),
+                child: Text(
+                  'Scan an employee QR code',
+                  style: TextStyle(fontSize: 16),
+                ),
               ),
             ),
         ],
@@ -125,6 +184,8 @@ class _ScanScreenState extends State<ScanScreen> {
     );
   }
 }
+
+// ---------------- HELPERS ----------------
 String extractEmployeeId(String qrData) {
   final regex = RegExp(r'EmployeeId:\s*([^,]+)');
   final match = regex.firstMatch(qrData);
