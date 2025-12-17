@@ -14,14 +14,20 @@ class ScanScreen extends StatefulWidget {
 }
 
 enum AttendStatus { idle, loading, success, error }
+enum MainDishType {
+  seafood,
+  beefOrChicken,
+}
 
-class _ScanScreenState extends State<ScanScreen>
-    with WidgetsBindingObserver {
+class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   late final MobileScannerController _scannerController;
 
   bool cameraStarted = false;
   String? scannedEmployeeId;
   String? errorMessage;
+  String? employeeName;
+  String? employeeEmail;
+  MainDishType? mainDish;
 
   AttendStatus status = AttendStatus.idle;
 
@@ -50,6 +56,27 @@ class _ScanScreenState extends State<ScanScreen>
       _startCamera();
     }
   }
+  MainDishType? parseMainDish(int? value) {
+    switch (value) {
+      case 1:
+        return MainDishType.seafood;
+      case 2:
+        return MainDishType.beefOrChicken;
+      default:
+        return null;
+    }
+  }
+  String mainDishLabel(MainDishType? type) {
+    switch (type) {
+      case MainDishType.seafood:
+        return 'Seafood 🐟';
+      case MainDishType.beefOrChicken:
+        return 'Beef / Chicken 🥩';
+      default:
+        return '';
+    }
+  }
+
 
   Future<void> _startCamera() async {
     if (cameraStarted) return;
@@ -72,6 +99,9 @@ class _ScanScreenState extends State<ScanScreen>
       scannedEmployeeId = null;
       status = AttendStatus.idle;
       errorMessage = null;
+      employeeName = null;
+      employeeEmail = null;
+      mainDish = null;
     });
 
     await Future.delayed(const Duration(milliseconds: 300));
@@ -101,7 +131,12 @@ class _ScanScreenState extends State<ScanScreen>
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 && data['employeeId'] != null) {
-        setState(() => status = AttendStatus.success);
+        setState(() {
+          status = AttendStatus.success;
+          employeeName = data['employeeName'];
+          employeeEmail = data['email'];
+          mainDish = parseMainDish(data['mainDish']);
+        });
       } else {
         setState(() {
           status = AttendStatus.error;
@@ -118,7 +153,6 @@ class _ScanScreenState extends State<ScanScreen>
     }
   }
 
-
   void showResultDialog(String employeeId) {
     showDialog(
       context: context,
@@ -130,23 +164,38 @@ class _ScanScreenState extends State<ScanScreen>
             title: const Text('Employee Scanned'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Text(
-                  employeeId,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 24),
-
                 if (status == AttendStatus.loading)
                   const CircularProgressIndicator(),
 
-                if (status == AttendStatus.success)
-                  const Icon(Icons.check_circle,
-                      color: Colors.green, size: 64),
-
+                if (status == AttendStatus.success) ...[
+                  const Icon(Icons.check_circle, color: Colors.green, size: 64),
+                  const SizedBox(height: 8),
+                  Text(
+                    employeeName ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black,fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    employeeEmail ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black,fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    mainDishLabel(mainDish),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
                 if (status == AttendStatus.error) ...[
-                  const Icon(Icons.error,
-                      color: Colors.red, size: 64),
+                  const Icon(Icons.error, color: Colors.red, size: 64),
                   const SizedBox(height: 8),
                   Text(
                     errorMessage ?? '',
@@ -198,10 +247,7 @@ class _ScanScreenState extends State<ScanScreen>
         backgroundColor: Colors.blueGrey[50],
         title: const Text('Scan QR'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: reset,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: reset),
         ],
       ),
       body: Stack(
