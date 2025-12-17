@@ -1,5 +1,9 @@
-import 'dart:math';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/io_client.dart';
+
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -14,9 +18,11 @@ enum AttendStatus { idle, loading, success, error }
 class _ScanScreenState extends State<ScanScreen>
     with WidgetsBindingObserver {
   late final MobileScannerController _scannerController;
-  bool cameraStarted = false; // Track camera manually
 
+  bool cameraStarted = false;
   String? scannedEmployeeId;
+  String? errorMessage;
+
   AttendStatus status = AttendStatus.idle;
 
   @override
@@ -38,8 +44,9 @@ class _ScanScreenState extends State<ScanScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
-      if (cameraStarted) _scannerController.stop();
-    } else if (state == AppLifecycleState.resumed && scannedEmployeeId == null) {
+      _stopCamera();
+    } else if (state == AppLifecycleState.resumed &&
+        scannedEmployeeId == null) {
       _startCamera();
     }
   }
@@ -49,9 +56,7 @@ class _ScanScreenState extends State<ScanScreen>
     try {
       await _scannerController.start();
       cameraStarted = true;
-    } catch (_) {
-      // Ignore errors if camera is busy
-    }
+    } catch (_) {}
   }
 
   Future<void> _stopCamera() async {
@@ -66,72 +71,122 @@ class _ScanScreenState extends State<ScanScreen>
     setState(() {
       scannedEmployeeId = null;
       status = AttendStatus.idle;
+      errorMessage = null;
     });
 
     await Future.delayed(const Duration(milliseconds: 300));
     _startCamera();
   }
 
-  // ---------------- SIMULATED ATTEND API ----------------
-  Future<void> attendEmployee() async {
-    setState(() => status = AttendStatus.loading);
-
-    await Future.delayed(const Duration(seconds: 2));
-
-    final bool isSuccess = Random().nextBool();
-
-    if (!mounted) return;
+  // ================= API CALL =================
+  Future<void> attendEmployee(String employeeId) async {
     setState(() {
-      status = isSuccess ? AttendStatus.success : AttendStatus.error;
+      status = AttendStatus.loading;
+      errorMessage = null;
     });
+
+    try {
+      final httpClient = HttpClient()
+        ..badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+
+      final ioClient = IOClient(httpClient);
+
+      final uri = Uri.parse(
+        'https://192.168.54.200:1990/api/RSVP/attend?employeeId=$employeeId',
+      );
+
+      final response = await ioClient.post(uri);
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['employeeId'] != null) {
+        setState(() => status = AttendStatus.success);
+      } else {
+        setState(() {
+          status = AttendStatus.error;
+          errorMessage = data['errorMessage'] ?? 'Unknown error';
+        });
+      }
+
+      ioClient.close();
+    } catch (e) {
+      setState(() {
+        status = AttendStatus.error;
+        errorMessage = 'Something went wrong';
+      });
+    }
   }
+
 
   void showResultDialog(String employeeId) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) => StatefulBuilder(builder: (context, setDialogState) {
-        return AlertDialog(
-          backgroundColor: Colors.blueGrey[50],
-          title: const Text('Employee Scanned'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Text(employeeId,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(height: 24),
-              if (status == AttendStatus.loading)
-                const CircularProgressIndicator(),
-              if (status == AttendStatus.success)
-                const Icon(Icons.check_circle, color: Colors.green, size: 64),
-              if (status == AttendStatus.error)
-                const Icon(Icons.error, color: Colors.red, size: 64),
-              const SizedBox(height: 16),
-              if (status == AttendStatus.idle)
-                ElevatedButton(
-                  onPressed: () async {
-                    setDialogState(() {
-                      status = AttendStatus.loading;
-                    });
-                    await attendEmployee();
-                    setDialogState(() {});
-                  },
-                  child: const Text('Attend Employee',style: TextStyle(color: Colors.white),),
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: Colors.blueGrey[50],
+            title: const Text('Employee Scanned'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  employeeId,
+                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-              if (status == AttendStatus.success || status == AttendStatus.error)
-                ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    reset();
-                  },
-                  child: const Text('Scan Next',style: TextStyle(color: Colors.white),),
-                ),
-            ],
-          ),
-        );
-      }),
+                const SizedBox(height: 24),
+
+                if (status == AttendStatus.loading)
+                  const CircularProgressIndicator(),
+
+                if (status == AttendStatus.success)
+                  const Icon(Icons.check_circle,
+                      color: Colors.green, size: 64),
+
+                if (status == AttendStatus.error) ...[
+                  const Icon(Icons.error,
+                      color: Colors.red, size: 64),
+                  const SizedBox(height: 8),
+                  Text(
+                    errorMessage ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ],
+
+                const SizedBox(height: 16),
+
+                if (status == AttendStatus.idle)
+                  ElevatedButton(
+                    onPressed: () async {
+                      setDialogState(() {});
+                      await attendEmployee(employeeId);
+                      setDialogState(() {});
+                    },
+                    child: const Text(
+                      'Attend Employee',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+
+                if (status == AttendStatus.success ||
+                    status == AttendStatus.error)
+                  ElevatedButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      reset();
+                    },
+                    child: const Text(
+                      'Scan Next',
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -155,10 +210,7 @@ class _ScanScreenState extends State<ScanScreen>
             MobileScanner(
               controller: _scannerController,
               onDetect: (capture) async {
-                final barcodes = capture.barcodes;
-                if (barcodes.isEmpty) return;
-
-                final rawValue = barcodes.first.rawValue;
+                final rawValue = capture.barcodes.first.rawValue;
                 if (rawValue == null) return;
 
                 final employeeId = extractEmployeeId(rawValue);
@@ -177,10 +229,7 @@ class _ScanScreenState extends State<ScanScreen>
               alignment: Alignment.bottomCenter,
               child: Padding(
                 padding: EdgeInsets.all(16),
-                child: Text(
-                  'Scan an employee QR code',
-                  style: TextStyle(fontSize: 16),
-                ),
+                child: Text('Scan an employee QR code'),
               ),
             ),
         ],
@@ -189,9 +238,8 @@ class _ScanScreenState extends State<ScanScreen>
   }
 }
 
-// ---------------- HELPERS ----------------
+// ================= HELPERS =================
 String extractEmployeeId(String qrData) {
   final regex = RegExp(r'EmployeeId:\s*([^,]+)');
-  final match = regex.firstMatch(qrData);
-  return match?.group(1)?.trim() ?? '';
+  return regex.firstMatch(qrData)?.group(1)?.trim() ?? '';
 }
