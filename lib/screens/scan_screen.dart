@@ -14,10 +14,10 @@ class ScanScreen extends StatefulWidget {
 }
 
 enum AttendStatus { idle, loading, success, error }
-enum MainDishType {
-  seafood,
-  beefOrChicken,
-}
+
+enum DetailsStatus { idle, loading, success, error }
+
+enum MainDishType { seafood, beefOrChicken }
 
 class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   late final MobileScannerController _scannerController;
@@ -29,7 +29,8 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   String? employeeEmail;
   MainDishType? mainDish;
 
-  AttendStatus status = AttendStatus.idle;
+  AttendStatus attendStatus = AttendStatus.idle;
+  DetailsStatus detailsStatus = DetailsStatus.idle;
 
   @override
   void initState() {
@@ -56,6 +57,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       _startCamera();
     }
   }
+
   MainDishType? parseMainDish(int? value) {
     switch (value) {
       case 1:
@@ -66,6 +68,7 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         return null;
     }
   }
+
   String mainDishLabel(MainDishType? type) {
     switch (type) {
       case MainDishType.seafood:
@@ -76,7 +79,6 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         return '';
     }
   }
-
 
   Future<void> _startCamera() async {
     if (cameraStarted) return;
@@ -97,7 +99,8 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
   void reset() async {
     setState(() {
       scannedEmployeeId = null;
-      status = AttendStatus.idle;
+      attendStatus = AttendStatus.idle;
+      detailsStatus = DetailsStatus.idle;
       errorMessage = null;
       employeeName = null;
       employeeEmail = null;
@@ -108,10 +111,22 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
     _startCamera();
   }
 
+  void resetWithoutCamera() async {
+    setState(() {
+      scannedEmployeeId = null;
+      attendStatus = AttendStatus.idle;
+      detailsStatus = DetailsStatus.idle;
+      errorMessage = null;
+      employeeName = null;
+      employeeEmail = null;
+      mainDish = null;
+    });
+  }
+
   // ================= API CALL =================
   Future<void> attendEmployee(String employeeId) async {
     setState(() {
-      status = AttendStatus.loading;
+      attendStatus = AttendStatus.loading;
       errorMessage = null;
     });
 
@@ -123,23 +138,23 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       final ioClient = IOClient(httpClient);
 
       final uri = Uri.parse(
-        'https://192.168.54.200:1990/api/RSVP/attend?employeeId=$employeeId',
+        'https://apiattendance.flairstech.com/api/RSVP/attend?employeeId=$employeeId',
       );
 
       final response = await ioClient.post(uri);
 
       final data = jsonDecode(response.body);
-
+      resetWithoutCamera();
       if (response.statusCode == 200 && data['employeeId'] != null) {
         setState(() {
-          status = AttendStatus.success;
+          attendStatus = AttendStatus.success;
           employeeName = data['employeeName'];
           employeeEmail = data['email'];
           mainDish = parseMainDish(data['mainDish']);
         });
       } else {
         setState(() {
-          status = AttendStatus.error;
+          attendStatus = AttendStatus.error;
           errorMessage = data['errorMessage'] ?? 'Unknown error';
         });
       }
@@ -147,7 +162,51 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
       ioClient.close();
     } catch (e) {
       setState(() {
-        status = AttendStatus.error;
+        attendStatus = AttendStatus.error;
+        errorMessage = 'Something went wrong';
+      });
+    }
+  }
+
+  Future<void> viewEmployee(String employeeId) async {
+    setState(() {
+      detailsStatus = DetailsStatus.loading;
+      errorMessage = null;
+    });
+
+    try {
+      final httpClient = HttpClient()
+        ..badCertificateCallback =
+            (X509Certificate cert, String host, int port) => true;
+
+      final ioClient = IOClient(httpClient);
+
+      final uri = Uri.parse(
+        'https://apiattendance.flairstech.com/api/RSVP/attend?employeeId=$employeeId',
+      );
+
+      final response = await ioClient.get(uri);
+
+      final data = jsonDecode(response.body);
+
+      if (response.statusCode == 200 && data['employeeId'] != null) {
+        setState(() {
+          detailsStatus = DetailsStatus.success;
+          employeeName = data['employeeName'];
+          employeeEmail = data['email'];
+          mainDish = parseMainDish(data['mainDish']);
+        });
+      } else {
+        setState(() {
+          detailsStatus = DetailsStatus.error;
+          errorMessage = data['errorMessage'] ?? 'Unknown error';
+        });
+      }
+
+      ioClient.close();
+    } catch (e) {
+      setState(() {
+        detailsStatus = DetailsStatus.error;
         errorMessage = 'Something went wrong';
       });
     }
@@ -161,27 +220,32 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
         builder: (context, setDialogState) {
           return AlertDialog(
             backgroundColor: Colors.blueGrey[50],
-            title: const Text('Employee Scanned'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                if (status == AttendStatus.loading)
+                if (attendStatus == AttendStatus.loading)
                   const CircularProgressIndicator(),
 
-                if (status == AttendStatus.success) ...[
+                if (attendStatus == AttendStatus.success) ...[
                   const Icon(Icons.check_circle, color: Colors.green, size: 64),
                   const SizedBox(height: 8),
                   Text(
                     employeeName ?? '',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black,fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     employeeEmail ?? '',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black,fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
@@ -193,9 +257,18 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
                       fontSize: 16,
                     ),
                   ),
+                  Text(
+                    "$employeeName attended successfully",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ],
-                if (status == AttendStatus.error) ...[
-                  const Icon(Icons.error, color: Colors.red, size: 64),
+                if (attendStatus == AttendStatus.error) ...[
+                  const Icon(Icons.cancel, color: Colors.red, size: 64),
                   const SizedBox(height: 8),
                   Text(
                     errorMessage ?? '',
@@ -203,34 +276,159 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
                     style: const TextStyle(color: Colors.red),
                   ),
                 ],
-
                 const SizedBox(height: 16),
-
-                if (status == AttendStatus.idle)
-                  ElevatedButton(
-                    onPressed: () async {
-                      setDialogState(() {});
-                      await attendEmployee(employeeId);
-                      setDialogState(() {});
-                    },
-                    child: const Text(
-                      'Attend Employee',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                  ),
-
-                if (status == AttendStatus.success ||
-                    status == AttendStatus.error)
-                  ElevatedButton(
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
                     onPressed: () {
                       Navigator.pop(context);
                       reset();
                     },
                     child: const Text(
-                      'Scan Next',
+                      'Scan More',
                       style: TextStyle(color: Colors.white),
                     ),
                   ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        side: const BorderSide(color: Color(0xFFD13827)),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(context);
+                      reset();
+                      Navigator.pop(context);
+                    },
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(color: Color(0xFFD13827)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void showDetailsDialog(String employeeId) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            backgroundColor: Colors.blueGrey[50],
+            title: const Text('Employee Scanned'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                if (detailsStatus == DetailsStatus.loading)
+                  const CircularProgressIndicator(),
+
+                if (detailsStatus == DetailsStatus.success) ...[
+                  const Icon(Icons.person, color: Colors.grey, size: 64),
+                  const SizedBox(height: 8),
+                  Text(
+                    employeeName ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    employeeEmail ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    mainDishLabel(mainDish),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        await attendEmployee(employeeId);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          showResultDialog(employeeId);
+                        });
+                      },
+                      child: const Text(
+                        'Confirm',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          side: const BorderSide(color: Color(0xFFD13827)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        reset();
+                        Navigator.pop(context);
+                      },
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Color(0xFFD13827)),
+                      ),
+                    ),
+                  ),
+                ],
+                if (detailsStatus == DetailsStatus.error) ...[
+                  const Icon(Icons.cancel, color: Colors.red, size: 64),
+                  const SizedBox(height: 8),
+                  Text(
+                    errorMessage ?? '',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        reset();
+                      },
+                      child: const Text(
+                        'Retry',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           );
@@ -263,10 +461,11 @@ class _ScanScreenState extends State<ScanScreen> with WidgetsBindingObserver {
                 if (employeeId.isEmpty) return;
 
                 await _stopCamera();
+                await viewEmployee(employeeId);
                 setState(() => scannedEmployeeId = employeeId);
 
                 WidgetsBinding.instance.addPostFrameCallback((_) {
-                  showResultDialog(employeeId);
+                  showDetailsDialog(employeeId);
                 });
               },
             ),

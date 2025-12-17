@@ -1,7 +1,3 @@
-// pubspec.yaml dependencies needed:
-// flutter_barcode_scanner: ^2.0.0
-// or mobile_scanner: ^5.0.0 (recommended)
-
 import 'package:code_scanner/screens/login_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -16,7 +12,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'QR Demo',
+      title: 'FT Code Scanner',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFD13827)),
         primaryColor: Color(0xFFD13827),
